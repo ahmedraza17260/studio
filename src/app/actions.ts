@@ -2,6 +2,10 @@
 'use server';
 
 import { z } from 'zod';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const urlSchema = z.string().url('Please provide a valid YouTube URL.');
 
@@ -12,18 +16,31 @@ export async function getVideoInfo(url: string) {
   }
   
   try {
-    // In a real application, you would use yt-dlp to get formats.
-    // This is a placeholder to simulate fetching formats.
-    console.log(`Simulating format fetching for: ${url}`);
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // To make this work, you need to have yt-dlp installed on your server.
+    // You can install it with: pip install yt-dlp
+    const { stdout } = await execAsync(`yt-dlp -F "${url}"`);
 
-    // Simulate finding available formats
-    const availableFormats = ['1080p', '720p', '480p', '360p', 'best'];
-    
-    return { success: true, formats: availableFormats };
+    // This is a simplified parser. A more robust solution would be better.
+    const lines = stdout.split('\n');
+    const formats = lines
+      .filter(line => line.startsWith('22 ') || (line.includes('video only') && (line.includes('1080p') || line.includes('720p'))))
+      .map(line => {
+        if(line.startsWith('22 ')) return '720p';
+        if(line.includes('1080p')) return '1080p';
+        return 'other';
+      })
+      .filter(f => f !== 'other');
+      
+    const uniqueFormats = [...new Set(formats)];
+    if (!uniqueFormats.includes('720p')) {
+        uniqueFormats.unshift('720p'); // a common default
+    }
+
+    return { success: true, formats: ['best', ...uniqueFormats] };
 
   } catch (e) {
     console.error(e);
-    return { success: false, error: 'An unexpected error occurred while fetching video info.' };
+    // This error can happen if yt-dlp is not installed or if the URL is invalid.
+    return { success: false, error: 'Failed to fetch video formats. Ensure the URL is correct and yt-dlp is installed on the server.' };
   }
 }

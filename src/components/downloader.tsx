@@ -88,7 +88,7 @@ export function Downloader() {
 
     toast({
       title: 'Starting Download...',
-      description: `Your ${type} is being prepared.`,
+      description: `Your ${type} is being prepared. This may take a moment.`,
     });
 
     try {
@@ -98,14 +98,34 @@ export function Downloader() {
         body: JSON.stringify({ url, quality, type }),
       });
 
-      const data = await response.json();
-
       if (response.ok) {
         toast({
-          title: 'Success!',
-          description: data.message,
+          title: 'Download Ready!',
+          description: 'Your download will begin shortly.',
         });
+        // The browser will handle the file download.
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        
+        const contentDisposition = response.headers.get('content-disposition');
+        let filename = `download.${type === 'video' ? 'mp4' : 'm4a'}`;
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+            if (filenameMatch && filenameMatch.length > 1) {
+                filename = filenameMatch[1];
+            }
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(downloadUrl);
+        a.remove();
+        
       } else {
+        const data = await response.json();
         throw new Error(data.error || 'An unknown error occurred.');
       }
     } catch (error) {
