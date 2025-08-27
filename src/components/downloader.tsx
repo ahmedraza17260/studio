@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, Lightbulb, Loader2, Youtube } from 'lucide-react';
+import { Download, Loader2, Search, Youtube } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -23,18 +23,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { getSuggestedTitle } from '@/app/actions';
-import { Separator } from './ui/separator';
+import { getVideoInfo } from '@/app/actions';
 
 export function Downloader() {
   const [url, setUrl] = useState('');
-  const [quality, setQuality] = useState('1080p');
-  const [suggestedTitle, setSuggestedTitle] = useState('');
-  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [quality, setQuality] = useState('');
+  const [availableFormats, setAvailableFormats] = useState<string[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
 
-  const handleSuggestTitle = async () => {
+  const handleSearch = async () => {
     if (!url) {
       toast({
         variant: 'destructive',
@@ -44,21 +43,24 @@ export function Downloader() {
       return;
     }
 
-    setIsSuggesting(true);
-    setSuggestedTitle('');
-    const result = await getSuggestedTitle(url);
-    setIsSuggesting(false);
+    setIsSearching(true);
+    setAvailableFormats([]);
+    setQuality('');
+
+    const result = await getVideoInfo(url);
+    setIsSearching(false);
 
     if (result.success) {
-      setSuggestedTitle(result.title!);
+      setAvailableFormats(result.formats!);
+      setQuality(result.formats![0]); // Default to the first available format
       toast({
-        title: 'Title suggestion ready!',
-        description: 'A new title has been generated for you.',
+        title: 'Video Found!',
+        description: 'Available formats have been loaded.',
       });
     } else {
       toast({
         variant: 'destructive',
-        title: 'Suggestion Failed',
+        title: 'Search Failed',
         description: result.error,
       });
     }
@@ -72,6 +74,14 @@ export function Downloader() {
         description: 'Please enter a YouTube URL to download.',
       });
       return;
+    }
+    if (type === 'video' && !quality) {
+        toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: 'Please search for the video and select a quality first.',
+        });
+        return;
     }
     
     setIsDownloading(true);
@@ -110,7 +120,7 @@ export function Downloader() {
     }
   };
 
-  const isBusy = isSuggesting || isDownloading;
+  const isBusy = isSearching || isDownloading;
 
   return (
     <>
@@ -127,7 +137,7 @@ export function Downloader() {
         <CardHeader>
           <CardTitle>YouTube Downloader</CardTitle>
           <CardDescription>
-            Enter a YouTube URL, choose your format, and start downloading.
+            Enter a YouTube URL, find available formats, and start downloading.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -138,44 +148,45 @@ export function Downloader() {
                 id="url"
                 placeholder="https://www.youtube.com/watch?v=..."
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => {
+                    setUrl(e.target.value);
+                    setAvailableFormats([]);
+                    setQuality('');
+                }}
                 disabled={isBusy}
               />
-              <Button onClick={handleSuggestTitle} disabled={isBusy || !url} className="w-full sm:w-auto flex-shrink-0 bg-accent hover:bg-accent/90">
-                {isSuggesting ? (
+              <Button onClick={handleSearch} disabled={isBusy || !url} className="w-full sm:w-auto flex-shrink-0">
+                {isSearching ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
-                  <Lightbulb className="mr-2 h-4 w-4" />
+                  <Search className="mr-2 h-4 w-4" />
                 )}
-                Suggest Title
+                Search
               </Button>
             </div>
           </div>
-          {suggestedTitle && (
-             <div className="space-y-2 rounded-lg border bg-secondary/50 p-4">
-                <Label>Suggested Title</Label>
-                <p className="text-sm text-foreground">{suggestedTitle}</p>
-             </div>
+          
+          {availableFormats.length > 0 && (
+            <div className="space-y-2">
+                <Label htmlFor="quality">Video Quality</Label>
+                <Select
+                value={quality}
+                onValueChange={setQuality}
+                disabled={isBusy}
+                >
+                <SelectTrigger id="quality" className="w-full">
+                    <SelectValue placeholder="Select quality" />
+                </SelectTrigger>
+                <SelectContent>
+                    {availableFormats.map(format => (
+                        <SelectItem key={format} value={format}>
+                            {format === 'best' ? 'Best available' : format}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+                </Select>
+            </div>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="quality">Video Quality</Label>
-            <Select
-              value={quality}
-              onValueChange={setQuality}
-              disabled={isBusy}
-            >
-              <SelectTrigger id="quality" className="w-full">
-                <SelectValue placeholder="Select quality" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="best">Best available</SelectItem>
-                <SelectItem value="1080p">1080p</SelectItem>
-                <SelectItem value="720p">720p</SelectItem>
-                <SelectItem value="480p">480p</SelectItem>
-                <SelectItem value="360p">360p</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-4 sm:flex-row sm:justify-end">
           <Button
@@ -184,19 +195,13 @@ export function Downloader() {
             variant="secondary"
             className="w-full sm:w-auto"
           >
-            {isDownloading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="mr-2 h-4 w-4" />
-            )}
+            {isDownloading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {!isDownloading && <Download className="mr-2 h-4 w-4" />}
             Download Audio Only
           </Button>
-          <Button onClick={() => handleDownload('video')} disabled={isBusy || !url} className="w-full sm:w-auto">
-            {isDownloading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="mr-2 h-4 w-4" />
-            )}
+          <Button onClick={() => handleDownload('video')} disabled={isBusy || !url || !quality} className="w-full sm:w-auto">
+            {isDownloading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {!isDownloading && <Download className="mr-2 h-4 w-4" />}
             Download Video
           </Button>
         </CardFooter>
