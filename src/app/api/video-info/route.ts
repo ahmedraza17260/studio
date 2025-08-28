@@ -1,59 +1,26 @@
-
 import { NextRequest, NextResponse } from 'next/server';
+import ytdlp from 'yt-dlp-exec';
 
 // ------------------ HELPERS ------------------
 
-// Extract video ID from various YouTube URLs
+// Extract YouTube video ID (for fallback APIs)
 function getYouTubeVideoId(url: string): string | null {
-  if (!url) return null;
   const regExp =
-    /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    /^(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=|embed\/|v\/|)([\w-]{11})(?:\S+)?$/;
   const match = url.match(regExp);
-  if (match && match[2].length === 11) {
-    return match[2];
-  }
-  return null;
+  return match ? match[1] : null;
 }
 
-// Fetch Piped instances dynamically
-async function getPipedInstances(): Promise<string[]> {
-  try {
-    const resp = await fetch(
-      "https://raw.githubusercontent.com/wiki/TeamPiped/Piped-Frontend/Instances.md",
-      { next: { revalidate: 3600 } } // cache for 1h
-    );
-    if (!resp.ok) throw new Error("Failed to fetch instances list");
-
-    const body = await resp.text();
-    const lines = body.split("\n");
-    const instances: string[] = [];
-    let inTable = false;
-
-    for (const line of lines) {
-        if (line.includes('API')) { // skip header
-            inTable = true;
-            continue;
-        }
-         if (!inTable || !line.trim().startsWith('|')) {
-            continue;
-        }
-        if (line.includes('---')) { // skip separator
-            continue;
-        }
-        const cols = line.split("|").map((c) => c.trim());
-        if (cols[2] && cols[2].startsWith("http")) {
-          instances.push(cols[2]);
-        }
-    }
-    
-    return instances;
-  } catch(err) {
-    console.warn("Could not dynamically fetch Piped instances. Using fallbacks.", err);
-    return [];
+// Shuffle array utility
+function shuffleArray<T>(array: T[]): T[] {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
   }
+  return array;
 }
 
-// Curated backup Piped instances (stable)
+// Curated Piped/Invidious instances
 const curatedPipedInstances = [
   "https://pipedapi.kavin.rocks",
   "https://pipedapi.syncpundit.io",
@@ -62,7 +29,6 @@ const curatedPipedInstances = [
   "https://pipedapi.adminforge.de",
 ];
 
-// Curated Invidious instances
 const invidiousInstances = [
   "https://invidious.snopyta.org",
   "https://vid.puffyan.us",
@@ -72,156 +38,88 @@ const invidiousInstances = [
 ];
 
 // ------------------ FORMATTERS ------------------
-
-function formatPipedResponse(data: any) {
-  const videoStreams =
-    data.videoStreams
-      ?.filter((s: any) => s.mimeType === "video/mp4" && !s.videoOnly)
-      .map((s: any) => ({
-        quality: s.quality,
-        url: s.url
-      }))
-      .sort(
-        (a: any, b: any) =>
-          parseInt(b.quality) - parseInt(a.quality)
-      ) || [];
-
-  const audioStreams =
-    data.audioStreams
-      ?.filter((s: any) => s.mimeType === "audio/mp4")
-      .sort((a: any, b: any) => b.bitrate - a.bitrate)
-      .slice(0, 1)
-      .map((s: any) => ({
-        quality: `${Math.round(s.bitrate / 1000)}kbps`,
-        url: s.url
-      })) || [];
-
-  return {
-    title: data.title || "Untitled Video",
-    videoStreams,
-    audioStreams
-  };
+function formatStreams(title: string, videoStreams: any[], audioStreams: any[], error?: string) {
+  return { title: title || "Untitled Video", videoStreams: videoStreams || [], audioStreams: audioStreams || [], error };
 }
 
+// Format yt-dlp response
+function formatYTDLPResponse(info: any) {
+  const videoStreams = (info.formats ?? [])
+    .filter((f: any) => f.vcodec !== "none" && f.ext === "mp4")
+    .map((f: any) => ({ quality: f.format_note || f.height + "p", url: f.url }));
 
-function formatInvidiousResponse(data: any) {
-    const videoStreams = (data.formatStreams ?? [])
-        .filter((s:any) => s.type?.includes("video/mp4"))
-        .map((s: any) => ({
-            quality: s.qualityLabel || s.resolution || "unknown",
-            url: s.url
-        }))
-        .sort((a: any, b: any) => parseInt(b.quality) - parseInt(a.quality));
-    
-    const audioStreams = (data.adaptiveFormats ?? [])
-        .filter((s: any) => s.type?.includes("audio/mp4"))
-        .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))
-        .slice(0, 1)
-        .map((s: any) => ({
-            quality: `${Math.round((s.bitrate || 0) / 1000)}kbps`,
-            url: s.url
-        }));
+  const audioStreams = (info.formats ?? [])
+    .filter((f: any) => f.acodec !== "none" && f.vcodec === "none")
+    .map((f: any) => ({ quality: f.abr + "kbps", url: f.url }));
 
-    return {
-        title: data.title || "Untitled Video",
-        videoStreams,
-        audioStreams
-    };
+  return formatStreams(info.title, videoStreams, audioStreams);
 }
 
+// Try fetching from instances (Piped/Invidious)
+async function tryInstances(instances: string[], urlBuilder: (inst: string, vid: string) => string, formatter: (data: any) => any, videoId: string) {
+  const shuffled = shuffleArray(instances);
+  for (const inst of shuffled) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(urlBuilder(inst, videoId), { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      const formatted = formatter(data);
+      if (formatted.videoStreams.length || formatted.audioStreams.length) return formatted;
+    } catch (err) {
+      continue;
+    }
+  }
+  return null;
+}
 
 // ------------------ MAIN HANDLER ------------------
-
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get("url");
-  if (!url) {
-    return NextResponse.json(
-      { error: "YouTube URL is required." },
-      { status: 400 }
-    );
-  }
+  if (!url) return NextResponse.json({ error: "YouTube URL is required." }, { status: 400 });
 
-  const videoId = getYouTubeVideoId(url);
-  if (!videoId) {
-    return NextResponse.json(
-      { error: "Invalid YouTube URL." },
-      { status: 400 }
-    );
-  }
-  
-  // Combine dynamic and curated lists, shuffle them
-  const pipedDynamic = await getPipedInstances();
-  const allPiped = [...new Set([...pipedDynamic, ...curatedPipedInstances])].sort(() => Math.random() - 0.5);
-
-  // ------------------ TRY PIPED ------------------
-  for (const instance of allPiped) {
-    try {
-      const res = await fetch(`${instance}/streams/${videoId}`, {
-        signal: AbortSignal.timeout(4000)
-      });
-      if (!res.ok) {
-        console.warn(`Piped instance ${instance} responded with status ${res.status}`);
-        continue;
-      }
-      const data = await res.json();
-      if (!data.videoStreams && !data.audioStreams) {
-        console.warn(`Piped instance ${instance} returned invalid data.`);
-        continue;
-      }
-      return NextResponse.json(formatPipedResponse(data));
-    } catch(err) {
-      console.warn(`Piped instance ${instance} failed or timed out.`, err);
-      continue;
-    }
-  }
-
-  // ------------------ TRY INVIDIOUS ------------------
-  console.warn("All Piped instances failed. Falling back to Invidious.");
-  for (const instance of invidiousInstances) {
-    try {
-      const res = await fetch(`${instance}/api/v1/videos/${videoId}`, {
-        signal: AbortSignal.timeout(4000)
-      });
-      if (!res.ok) {
-        console.warn(`Invidious instance ${instance} responded with status ${res.status}`);
-        continue;
-      }
-
-      const data = await res.json();
-      if (!data.formatStreams && !data.adaptiveFormats) {
-        console.warn(`Invidious instance ${instance} returned invalid data.`);
-        continue;
-      }
-      return NextResponse.json(formatInvidiousResponse(data));
-    } catch(err) {
-      console.warn(`Invidious instance ${instance} failed or timed out.`, err);
-      continue;
-    }
-  }
-
-  // ------------------ METADATA ONLY FALLBACK ------------------
-  console.warn("All Invidious instances failed. Falling back to metadata-only.");
+  // Try yt-dlp first
   try {
-    const res = await fetch(
-      `https://www.youtube.com/oembed?url=http://www.youtube.com/watch?v=${videoId}&format=json`
-    );
+    const info = await ytdlp(url, { dumpSingleJson: true, noWarnings: true, preferFreeFormats: true, youtubeSkipDashManifest: true });
+    const ytResult = formatYTDLPResponse(info);
+    if (ytResult.videoStreams.length || ytResult.audioStreams.length) return NextResponse.json(ytResult);
+  } catch (err) {
+    console.warn("yt-dlp failed, falling back to Piped/Invidious.", err);
+  }
+
+  // Fallback to Piped/Invidious
+  const videoId = getYouTubeVideoId(url);
+  if (videoId) {
+    // Try Piped
+    const pipedResult = await tryInstances(curatedPipedInstances, (inst, vid) => `${inst}/streams/${vid}`, (data) => {
+      const videoStreams = (data.videoStreams ?? []).map((s: any) => ({ quality: s.quality, url: s.url }));
+      const audioStreams = (data.audioStreams ?? []).map((s: any) => ({ quality: s.quality, url: s.url }));
+      return formatStreams(data.title, videoStreams, audioStreams);
+    }, videoId);
+
+    if (pipedResult) return NextResponse.json(pipedResult);
+
+    // Try Invidious
+    const invidResult = await tryInstances(invidiousInstances, (inst, vid) => `${inst}/api/v1/videos/${vid}`, (data) => {
+      const videoStreams = (data.formatStreams ?? []).map((s: any) => ({ quality: s.qualityLabel || "unknown", url: s.url }));
+      const audioStreams = (data.adaptiveFormats ?? []).map((s: any) => ({ quality: s.bitrate + "kbps", url: s.url }));
+      return formatStreams(data.title, videoStreams, audioStreams);
+    }, videoId);
+
+    if (invidResult) return NextResponse.json(invidResult);
+  }
+
+  // Fallback to metadata
+  try {
+    const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
     if (res.ok) {
       const data = await res.json();
-      return NextResponse.json({
-        title: data.title || "Untitled Video",
-        videoStreams: [],
-        audioStreams: [],
-        error: "Could not load download links, but title is available."
-      });
-    } else {
-        throw new Error(`oEmbed fetch failed with status ${res.status}`);
+      return NextResponse.json(formatStreams(data.title, [], [], "Download links unavailable. You can watch the video on YouTube."));
     }
-  } catch(err) {
-     console.warn("Metadata fallback (oEmbed) failed.", err);
-  }
+  } catch {}
 
-  return NextResponse.json(
-    { error: "All downloader services failed. Please try again later." },
-    { status: 503 }
-  );
+  return NextResponse.json({ error: "All download services unavailable." }, { status: 503 });
 }
