@@ -27,6 +27,7 @@ interface VideoInfo {
   title: string;
   videoStreams: Stream[];
   audioStreams: Stream[];
+  error?: string;
 }
 
 export function Downloader() {
@@ -50,12 +51,14 @@ export function Downloader() {
     setVideoInfo(null);
     try {
       const response = await fetch(`/api/video-info?url=${encodeURIComponent(url)}`);
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch video information.');
-      }
       const data: VideoInfo = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch video information.');
+      }
+      
       setVideoInfo(data);
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       toast({
@@ -63,27 +66,26 @@ export function Downloader() {
         title: 'Search Failed',
         description: errorMessage,
       });
+      setVideoInfo(null);
     } finally {
       setIsSearching(false);
     }
   };
 
   const handleDownload = (downloadUrl: string, quality: string) => {
-    // The Piped API gives us a direct URL to the video content.
     // Opening this URL in a new tab will trigger the browser's download functionality.
     setIsDownloading(quality);
     window.open(downloadUrl, '_blank');
     
-    // We can't know for sure when the download starts or finishes from the client-side
-    // when using window.open. We'll reset the downloading state after a short delay
-    // to allow the user to perform another download.
+    // We can't know for sure when the download starts or finishes from the client-side.
+    // We'll reset the downloading state after a short delay to allow another download.
     setTimeout(() => {
         setIsDownloading(null);
     }, 2000);
   };
   
   const isBusy = isSearching || isDownloading !== null;
-  const noStreamsAvailable = videoInfo && videoInfo.videoStreams.length === 0 && videoInfo.audioStreams.length === 0;
+  const noStreamsAvailable = videoInfo && !isSearching && videoInfo.videoStreams.length === 0 && videoInfo.audioStreams.length === 0;
 
   return (
     <>
@@ -129,7 +131,15 @@ export function Downloader() {
           </div>
         </CardContent>
 
-        {videoInfo && (
+        {isSearching && (
+            <CardContent>
+                <div className="flex items-center justify-center p-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+            </CardContent>
+        )}
+
+        {videoInfo && !isSearching && (
           <>
             <Separator />
             <CardHeader>
@@ -140,9 +150,9 @@ export function Downloader() {
               {noStreamsAvailable ? (
                  <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>No Downloads Found</AlertTitle>
+                    <AlertTitle>{videoInfo.error ? 'Information' : 'No Downloads Found'}</AlertTitle>
                     <AlertDescription>
-                        We could not find any downloadable video or audio streams for this URL. This might be a temporary issue, please try again later.
+                        {videoInfo.error || "We could not find any downloadable video or audio streams for this URL. This might be a temporary issue, please try again later."}
                     </AlertDescription>
                 </Alert>
               ) : (
@@ -153,14 +163,14 @@ export function Downloader() {
                             disabled={isDownloading !== null}
                             variant="secondary"
                             size="lg"
-                            className="w-full"
+                            className="w-full justify-start text-left h-auto py-3"
                         >
                             {isDownloading === 'audio' ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             ) : (
                             <Download className="mr-2 h-4 w-4" />
                             )}
-                            <div>
+                            <div className="flex-grow">
                             <p className="font-semibold">Audio Only</p>
                             <p className="text-xs text-muted-foreground">Best Quality (.m4a)</p>
                             </div>
@@ -172,14 +182,14 @@ export function Downloader() {
                         onClick={() => handleDownload(format.url, format.quality)}
                         disabled={isDownloading !== null}
                         size="lg"
-                        className="w-full"
+                        className="w-full justify-start text-left h-auto py-3"
                     >
                         {isDownloading === format.quality ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
                         <Download className="mr-2 h-4 w-4" />
                         )}
-                        <div>
+                        <div className="flex-grow">
                             <p className="font-semibold">{format.quality}</p>
                             <p className="text-xs text-muted-foreground">Video (.mp4)</p>
                         </div>
