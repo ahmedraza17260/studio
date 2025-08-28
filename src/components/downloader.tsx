@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, Loader2, Search, Youtube } from 'lucide-react';
+import { Download, Loader2, Youtube } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -23,48 +23,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { getVideoInfo } from '@/app/actions';
 
 export function Downloader() {
   const [url, setUrl] = useState('');
-  const [quality, setQuality] = useState('');
-  const [availableFormats, setAvailableFormats] = useState<string[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [quality, setQuality] = useState('720p'); // Default to 720p
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
-
-  const handleSearch = async () => {
-    if (!url) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Please enter a YouTube URL first.',
-      });
-      return;
-    }
-
-    setIsSearching(true);
-    setAvailableFormats([]);
-    setQuality('');
-
-    const result = await getVideoInfo(url);
-    setIsSearching(false);
-
-    if (result.success) {
-      setAvailableFormats(result.formats!);
-      setQuality(result.formats![0]); // Default to the first available format
-      toast({
-        title: 'Video Found!',
-        description: 'Available formats have been loaded.',
-      });
-    } else {
-      toast({
-        variant: 'destructive',
-        title: 'Search Failed',
-        description: result.error,
-      });
-    }
-  };
 
   const handleDownload = async (type: 'video' | 'audio') => {
      if (!url) {
@@ -74,14 +38,6 @@ export function Downloader() {
         description: 'Please enter a YouTube URL to download.',
       });
       return;
-    }
-    if (type === 'video' && !quality) {
-        toast({
-            variant: 'destructive',
-            title: 'Error',
-            description: 'Please search for the video and select a quality first.',
-        });
-        return;
     }
     
     setIsDownloading(true);
@@ -103,7 +59,7 @@ export function Downloader() {
           title: 'Download Ready!',
           description: 'Your download will begin shortly.',
         });
-        // The browser will handle the file download.
+        
         const blob = await response.blob();
         const downloadUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -140,7 +96,7 @@ export function Downloader() {
     }
   };
 
-  const isBusy = isSearching || isDownloading;
+  const isBusy = isDownloading;
 
   return (
     <>
@@ -157,56 +113,38 @@ export function Downloader() {
         <CardHeader>
           <CardTitle>YouTube Downloader</CardTitle>
           <CardDescription>
-            Enter a YouTube URL, find available formats, and start downloading.
+            Enter a YouTube URL, select your desired quality, and start downloading.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="url">YouTube URL</Label>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                id="url"
-                placeholder="https://www.youtube.com/watch?v=..."
-                value={url}
-                onChange={(e) => {
-                    setUrl(e.target.value);
-                    setAvailableFormats([]);
-                    setQuality('');
-                }}
-                disabled={isBusy}
-              />
-              <Button onClick={handleSearch} disabled={isBusy || !url} className="w-full sm:w-auto flex-shrink-0">
-                {isSearching ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Search className="mr-2 h-4 w-4" />
-                )}
-                Search
-              </Button>
-            </div>
+            <Input
+              id="url"
+              placeholder="https://www.youtube.com/watch?v=..."
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              disabled={isBusy}
+            />
           </div>
           
-          {availableFormats.length > 0 && (
-            <div className="space-y-2">
-                <Label htmlFor="quality">Video Quality</Label>
-                <Select
-                value={quality}
-                onValueChange={setQuality}
-                disabled={isBusy}
-                >
-                <SelectTrigger id="quality" className="w-full">
-                    <SelectValue placeholder="Select quality" />
-                </SelectTrigger>
-                <SelectContent>
-                    {availableFormats.map(format => (
-                        <SelectItem key={format} value={format}>
-                            {format === 'best' ? 'Best available' : format}
-                        </SelectItem>
-                    ))}
-                </SelectContent>
-                </Select>
-            </div>
-          )}
+          <div className="space-y-2">
+              <Label htmlFor="quality">Video Quality</Label>
+              <Select
+              value={quality}
+              onValueChange={setQuality}
+              disabled={isBusy}
+              >
+              <SelectTrigger id="quality" className="w-full">
+                  <SelectValue placeholder="Select quality" />
+              </SelectTrigger>
+              <SelectContent>
+                  <SelectItem value="best">Best Available</SelectItem>
+                  <SelectItem value="1080p">1080p</SelectItem>
+                  <SelectItem value="720p">720p</SelectItem>
+              </SelectContent>
+              </Select>
+          </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-4 sm:flex-row sm:justify-end">
           <Button
@@ -219,7 +157,7 @@ export function Downloader() {
             {!isDownloading && <Download className="mr-2 h-4 w-4" />}
             Download Audio Only
           </Button>
-          <Button onClick={() => handleDownload('video')} disabled={isBusy || !url || !quality} className="w-full sm:w-auto">
+          <Button onClick={() => handleDownload('video')} disabled={isBusy || !url} className="w-full sm:w-auto">
             {isDownloading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {!isDownloading && <Download className="mr-2 h-4 w-4" />}
             Download Video
