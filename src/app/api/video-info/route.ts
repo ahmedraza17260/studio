@@ -32,8 +32,17 @@ export async function GET(req: NextRequest) {
             console.error(`Piped API Error (${apiResponse.status}): ${errorText}`);
             return NextResponse.json({ error: `Failed to fetch from Piped API: ${apiResponse.statusText}` }, { status: apiResponse.status });
         }
+        
+        // The Piped API can sometimes return HTML (e.g., error pages) even with a 200 OK status.
+        // We need to gracefully handle this to avoid crashing the app.
+        let data;
+        try {
+           data = await apiResponse.json();
+        } catch (e) {
+            console.error('Failed to parse JSON from Piped API:', e);
+            return NextResponse.json({ error: 'The external API returned an invalid response. Please try again later.' }, { status: 502 }); // 502 Bad Gateway
+        }
 
-        const data = await apiResponse.json();
 
         // We only want to return MP4 video streams
         const videoStreams = data.videoStreams
