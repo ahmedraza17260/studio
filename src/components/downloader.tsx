@@ -17,16 +17,22 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
 
+interface Stream {
+  quality: string;
+  url: string;
+}
+
 interface VideoInfo {
   title: string;
-  formats: string[];
+  videoStreams: Stream[];
+  audioStreams: Stream[];
 }
 
 export function Downloader() {
   const [url, setUrl] = useState('');
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [isDownloading, setIsDownloading] = useState<string | null>(null); // Stores the quality being downloaded
+  const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleSearch = async () => {
@@ -42,14 +48,13 @@ export function Downloader() {
     setIsSearching(true);
     setVideoInfo(null);
     try {
-      // The backend is not implemented, so we will show a placeholder.
-      // In a real application, you would fetch this from your backend.
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setVideoInfo({
-        title: 'Example Video Title - Implementation Needed',
-        formats: ['1080p', '720p', '480p', '360p'],
-      });
-      
+      const response = await fetch(`/api/video-info?url=${encodeURIComponent(url)}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch video information.');
+      }
+      const data: VideoInfo = await response.json();
+      setVideoInfo(data);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       toast({
@@ -62,20 +67,18 @@ export function Downloader() {
     }
   };
 
-  const handleDownload = async (quality: string, type: 'video' | 'audio') => {
-    if (!url) return;
-
+  const handleDownload = (downloadUrl: string, quality: string) => {
+    // The Piped API gives us a direct URL to the video content.
+    // Opening this URL in a new tab will trigger the browser's download functionality.
     setIsDownloading(quality);
-    toast({
-      title: 'Starting Download...',
-      description: `Backend not implemented. This is a placeholder.`,
-      variant: 'destructive'
-    });
+    window.open(downloadUrl, '_blank');
     
-    // Simulate a download process
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    setIsDownloading(null);
+    // We can't know for sure when the download starts or finishes from the client-side
+    // when using window.open. We'll reset the downloading state after a short delay
+    // to allow the user to perform another download.
+    setTimeout(() => {
+        setIsDownloading(null);
+    }, 2000);
   };
   
   const isBusy = isSearching || isDownloading !== null;
@@ -133,38 +136,40 @@ export function Downloader() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <Button
-                  onClick={() => handleDownload('audio', 'audio')}
-                  disabled={isDownloading !== null}
-                  variant="secondary"
-                  size="lg"
-                  className="w-full"
-                >
-                  {isDownloading === 'audio' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="mr-2 h-4 w-4" />
-                  )}
-                  <div>
-                    <p className="font-semibold">Audio Only</p>
-                    <p className="text-xs text-muted-foreground">Best Quality (.m4a)</p>
-                  </div>
-                </Button>
-                {videoInfo.formats.map((format) => (
+                {videoInfo.audioStreams.length > 0 && (
+                    <Button
+                        onClick={() => handleDownload(videoInfo.audioStreams[0].url, 'audio')}
+                        disabled={isDownloading !== null}
+                        variant="secondary"
+                        size="lg"
+                        className="w-full"
+                    >
+                        {isDownloading === 'audio' ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                        <Download className="mr-2 h-4 w-4" />
+                        )}
+                        <div>
+                        <p className="font-semibold">Audio Only</p>
+                        <p className="text-xs text-muted-foreground">Best Quality (.m4a)</p>
+                        </div>
+                    </Button>
+                )}
+                {videoInfo.videoStreams.map((format) => (
                   <Button
-                    key={format}
-                    onClick={() => handleDownload(format, 'video')}
+                    key={format.quality}
+                    onClick={() => handleDownload(format.url, format.quality)}
                     disabled={isDownloading !== null}
                     size="lg"
                     className="w-full"
                   >
-                    {isDownloading === format ? (
+                    {isDownloading === format.quality ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
                       <Download className="mr-2 h-4 w-4" />
                     )}
                      <div>
-                        <p className="font-semibold">{format}</p>
+                        <p className="font-semibold">{format.quality}</p>
                         <p className="text-xs text-muted-foreground">Video (.mp4)</p>
                      </div>
                   </Button>
