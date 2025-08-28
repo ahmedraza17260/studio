@@ -14,30 +14,47 @@ function getYouTubeVideoId(url: string): string | null {
 // Fetches a list of Piped instances and returns them shuffled
 async function getPipedInstances(): Promise<string[]> {
     try {
-        const resp = await fetch("https://raw.githubusercontent.com/wiki/TeamPiped/Piped-Frontend/Instances.md");
+        const resp = await fetch("https://raw.githubusercontent.com/wiki/TeamPiped/Piped-Frontend/Instances.md", { next: { revalidate: 3600 } }); // Cache for 1 hour
+        if (!resp.ok) {
+            throw new Error(`Failed to fetch instances list, status: ${resp.status}`);
+        }
         const body = await resp.text();
         const lines = body.split("\n");
         const instances: string[] = [];
         
-        let skipped = 0;
+        // This flag is to ensure we are parsing lines within the markdown table
+        let inTable = false;
         for (const line of lines) {
-            const split = line.split("|");
-            if (split.length >= 4) {
-                if (skipped < 2) { // Skip table header
-                    skipped++;
+            // A table row in markdown starts and ends with a `|`
+            if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+                inTable = true;
+                const columns = line.split('|').map(col => col.trim());
+
+                // The header row has `API` in the second column. We skip it and the separator line below it.
+                if (columns[1]?.includes('API') || columns[1]?.includes('---')) {
                     continue;
                 }
-                const apiUrl = split[1]?.trim();
+                
+                const apiUrl = columns[2]; // The API URL is the second column of content
+                
                 // Basic validation for a valid URL
                 if (apiUrl && apiUrl.startsWith('http')) {
                     instances.push(apiUrl);
                 }
+            } else {
+                inTable = false;
             }
         }
+
+        if (instances.length === 0) {
+            console.warn("Parsing Piped instances from Github returned no results. Falling back to default.");
+            return ["https://pipedapi.kavin.rocks"];
+        }
+
         // Shuffle instances to distribute load
         return instances.sort(() => Math.random() - 0.5);
     } catch (error) {
-        console.error("Failed to fetch Piped instances:", error);
+        console.error("Failed to fetch or parse Piped instances, falling back to default:", error);
         // Return a default list if fetching fails
         return ["https://pipedapi.kavin.rocks"];
     }
@@ -86,7 +103,7 @@ export async function GET(req: NextRequest) {
 
             // If we get here, the API call was successful
             const videoStreams = data.videoStreams
-                ?.filter((s: any) => s.format === 'MPEG_4')
+                ?.filter((s: any) => s.format === 'MPEG_4' && s.videoOnly === false) // Ensure it has audio
                 .map((s: any) => ({
                     quality: s.quality,
                     url: s.url,
@@ -100,7 +117,7 @@ export async function GET(req: NextRequest) {
             const audioStreams = data.audioStreams
                 ?.filter((s: any) => s.mimeType === 'audio/mp4')
                  .sort((a: any, b: any) => b.bitrate - a.bitrate)
-                 .slice(0, 1)
+                 .slice(0, 1) // Get the best quality audio stream
                  .map((s: any) => ({
                     quality: `${Math.round(s.bitrate / 1000)}kbps`,
                     url: s.url
@@ -125,5 +142,5 @@ export async function GET(req: NextRequest) {
     }
 
     // If all instances failed
-    return NextResponse.json({ error: 'All available downloader services failed. Please try again later.' }, { status: 503 });
+    return NextResponse.json({ error: 'All available downloader services are currently busy or unavailable. Please try again later.' }, { status: 503 });
 }
