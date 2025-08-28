@@ -76,7 +76,7 @@ const invidiousInstances = [
 function formatPipedResponse(data: any) {
   const videoStreams =
     data.videoStreams
-      ?.filter((s: any) => s.format === "MPEG_4" && !s.videoOnly)
+      ?.filter((s: any) => s.mimeType === "video/mp4" && !s.videoOnly)
       .map((s: any) => ({
         quality: s.quality,
         url: s.url
@@ -106,6 +106,7 @@ function formatPipedResponse(data: any) {
 
 function formatInvidiousResponse(data: any) {
     const videoStreams = (data.formatStreams ?? [])
+        .filter((s:any) => s.type?.includes("video/mp4"))
         .map((s: any) => ({
             quality: s.qualityLabel || s.resolution || "unknown",
             url: s.url
@@ -163,7 +164,7 @@ export async function GET(req: NextRequest) {
         continue;
       }
       const data = await res.json();
-      if (!data.videoStreams || !data.audioStreams) {
+      if (!data.videoStreams && !data.audioStreams) {
         console.warn(`Piped instance ${instance} returned invalid data.`);
         continue;
       }
