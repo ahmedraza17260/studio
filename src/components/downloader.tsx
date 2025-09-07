@@ -1,206 +1,185 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Download, Loader2, Search, Youtube, AlertCircle } from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
+import React, { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { Separator } from '@/components/ui/separator';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Download, Loader2, AlertCircle, Search } from "lucide-react";
+import { setDataStartEndIndexes } from "recharts/types/state/chartDataSlice";
 
-interface Stream {
+type Stream = {
   quality: string;
+  itag: number;
   url: string;
-}
+};
 
-interface VideoInfo {
+type VideoInfo = {
   title: string;
-  videoStreams: Stream[];
   audioStreams: Stream[];
+  videoStreams: Stream[];
   error?: string;
-}
+};
 
-export function Downloader() {
-  const [url, setUrl] = useState('');
+export default function Downloader() {
+  const [url, setUrl] = useState("");
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
-  const { toast } = useToast();
 
   const handleSearch = async () => {
-    if (!url) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Please enter a YouTube URL.',
-      });
-      return;
-    }
-
+    if (!url) return;
     setIsSearching(true);
     setVideoInfo(null);
-    try {
-      const response = await fetch(`/api/video-info?url=${encodeURIComponent(url)}`);
-      const data: VideoInfo = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch video information.');
-      }
-      
-      setVideoInfo(data);
 
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      toast({
-        variant: 'destructive',
-        title: 'Search Failed',
-        description: errorMessage,
+    try {
+      const res = await fetch(`/api/download?url=${encodeURIComponent(url)}`);
+      // const res = await fetch(`/api/video-info?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+
+      // Ensure arrays exist
+      setVideoInfo({
+        title: data.title || "Unknown",
+        audioStreams: data.audioStreams || [],
+        videoStreams: data.videoStreams || [],
+        error: data.error,
       });
-      setVideoInfo(null);
+    } catch (err) {
+      console.error("Error fetching video info:", err);
+      setVideoInfo({
+        title: "Error",
+        audioStreams: [],
+        videoStreams: [],
+        error: "Failed to fetch video info.",
+      });
     } finally {
       setIsSearching(false);
     }
   };
 
-  const handleDownload = (downloadUrl: string, quality: string) => {
-    // Opening this URL in a new tab will trigger the browser's download functionality.
-    setIsDownloading(quality);
-    window.open(downloadUrl, '_blank');
-    
-    // We can't know for sure when the download starts or finishes from the client-side.
-    // We'll reset the downloading state after a short delay to allow another download.
-    setTimeout(() => {
-        setIsDownloading(null);
-    }, 2000);
+  const handleDownload = (downloadUrl: string, label: string) => {
+    setIsDownloading(label);
+    window.open(downloadUrl, "_blank");
+    setTimeout(() => setIsDownloading(null), 2000);
   };
-  
-  const isBusy = isSearching || isDownloading !== null;
-  const noStreamsAvailable = videoInfo && !isSearching && videoInfo.videoStreams.length === 0 && videoInfo.audioStreams.length === 0;
+
+  const noStreamsAvailable =
+    !videoInfo?.audioStreams?.length && !videoInfo?.videoStreams?.length;
 
   return (
-    <>
-      <div className="mb-8 flex flex-col items-center text-center">
-        <div className="mb-4 flex items-center justify-center gap-3">
-          <Youtube className="h-12 w-12 text-primary" />
-          <h1 className="text-5xl font-bold tracking-tight">TubeSnag</h1>
-        </div>
-        <p className="text-muted-foreground">
-          Enter a YouTube URL to see available download options.
-        </p>
-      </div>
-      <Card className="w-full shadow-lg">
+    <div className="w-full max-w-2xl mx-auto p-4">
+      <Card>
         <CardHeader>
           <CardTitle>YouTube Downloader</CardTitle>
           <CardDescription>
-            Enter a YouTube URL and click Search to begin.
+            Paste a YouTube link to fetch download options
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex w-full items-end space-x-2">
-            <div className="flex-grow space-y-2">
-              <Label htmlFor="url">YouTube URL</Label>
-              <Input
-                id="url"
-                placeholder="https://www.youtube.com/watch?v=..."
-                value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  setVideoInfo(null); // Reset on new URL
-                }}
-                disabled={isBusy}
-              />
-            </div>
-            <Button onClick={handleSearch} disabled={isBusy || !url}>
+        <CardContent>
+          <div className="flex gap-2">
+            <Input
+              type="url"
+              placeholder="Enter YouTube URL..."
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+            <Button onClick={handleSearch} disabled={isSearching}>
               {isSearching ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Search className="mr-2 h-4 w-4" />
               )}
-              Search
+              Fetch
             </Button>
           </div>
-        </CardContent>
 
-        {isSearching && (
-            <CardContent>
-                <div className="flex items-center justify-center p-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-            </CardContent>
-        )}
-
-        {videoInfo && !isSearching && (
-          <>
-            <Separator />
-            <CardHeader>
+          {/* Show results */}
+          {videoInfo && !isSearching && (
+            <>
+              <Separator className="my-4" />
+              <CardHeader>
                 <CardTitle className="text-lg">{videoInfo.title}</CardTitle>
-                <CardDescription>Select a format to download.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {noStreamsAvailable ? (
-                 <Alert variant="destructive">
+                <CardDescription>
+                  {videoInfo?.videoStreams?.length ||
+                    videoInfo?.audioStreams?.length
+                    ? "Select a format to download."
+                    : "No downloads available."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {noStreamsAvailable ? (
+                  <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>{videoInfo.error ? 'Information' : 'No Downloads Found'}</AlertTitle>
+                    <AlertTitle>Information</AlertTitle>
                     <AlertDescription>
-                        {videoInfo.error || "We could not find any downloadable video or audio streams for this URL. This might be a temporary issue, please try again later."}
+                      {videoInfo.error ||
+                        "We could not find any downloadable video or audio streams for this URL. This might be a temporary issue, please try again later."}
                     </AlertDescription>
-                </Alert>
-              ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {videoInfo.audioStreams.length > 0 && (
-                        <Button
-                            onClick={() => handleDownload(videoInfo.audioStreams[0].url, 'audio')}
-                            disabled={isDownloading !== null}
-                            variant="secondary"
-                            size="lg"
-                            className="w-full justify-start text-left h-auto py-3"
-                        >
-                            {isDownloading === 'audio' ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                            <Download className="mr-2 h-4 w-4" />
-                            )}
-                            <div className="flex-grow">
-                            <p className="font-semibold">Audio Only</p>
-                            <p className="text-xs text-muted-foreground">Best Quality (.m4a)</p>
-                            </div>
-                        </Button>
+                  </Alert>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {/* Audio Button */}
+                    {videoInfo?.audioStreams?.length > 0 && (
+                      <Button
+                        onClick={() =>
+                          handleDownload(
+                            videoInfo.audioStreams[0].url,
+                            "audio"
+                          )
+                        }
+                        disabled={isDownloading !== null}
+                        variant="secondary"
+                        size="lg"
+                        className="w-full justify-start text-left h-auto py-3"
+                      >
+                        {isDownloading === "audio" ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="mr-2 h-4 w-4" />
+                        )}
+                        <div className="flex-grow">
+                          <p className="font-semibold">Audio Only</p>
+                          <p className="text-xs text-muted-foreground">
+                            Best Quality (.m4a)
+                          </p>
+                        </div>
+                      </Button>
                     )}
-                    {videoInfo.videoStreams.map((format) => (
-                    <Button
-                        key={format.quality}
+
+                    {/* Video Buttons */}
+                    {videoInfo.videoStreams.map((format, index) => (
+                      <Button
+                        key={`${format.itag}-${index}`}   // ✅ always unique
                         onClick={() => handleDownload(format.url, format.quality)}
                         disabled={isDownloading !== null}
                         size="lg"
                         className="w-full justify-start text-left h-auto py-3"
-                    >
+                      >
                         {isDownloading === format.quality ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
-                        <Download className="mr-2 h-4 w-4" />
+                          <Download className="mr-2 h-4 w-4" />
                         )}
                         <div className="flex-grow">
-                            <p className="font-semibold">{format.quality}</p>
-                            <p className="text-xs text-muted-foreground">Video (.mp4)</p>
+                          <p className="font-semibold">{format.quality}</p>
+                          <p className="text-xs text-muted-foreground">Video (.mp4)</p>
                         </div>
-                    </Button>
+                      </Button>
                     ))}
-                </div>
-              )}
-            </CardContent>
-          </>
-        )}
+                  </div>
+                )}
+              </CardContent>
+            </>
+          )}
+        </CardContent>
       </Card>
-    </>
+    </div>
   );
 }
