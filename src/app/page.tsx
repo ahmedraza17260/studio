@@ -1,5 +1,6 @@
 import Downloader from '@/components/downloader';
 import type { Metadata } from 'next';
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 export const metadata: Metadata = {
   title: "YouTube Video Downloader - Studio",
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-center bg-background p-4 sm:p-8">
+      <SpeedInsights />
       <div className="w-full max-w-2xl">
         <Downloader />
       </div>
