@@ -33,7 +33,7 @@ export default function Downloader() {
   const [isSearching, setIsSearching] = useState(false);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+  // const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
 
   // ------------------- FETCH VIDEO INFO -------------------
@@ -43,7 +43,8 @@ export default function Downloader() {
     setVideoInfo(null);
 
     try {
-      const res = await fetch(`${BACKEND_URL}/info?url=${encodeURIComponent(url)}`);
+      const res = await fetch(`/api/proxy/info?url=${encodeURIComponent(url)}`);
+      // const res = await fetch(`${BACKEND_URL}/info?url=${encodeURIComponent(url)}`);
 
       if (!res.ok) {
         throw new Error(`Server returned ${res.status}`);
@@ -75,10 +76,15 @@ export default function Downloader() {
   if (!videoInfo) return;
   setIsDownloading(label);
 
+  // ✅ Use proxy instead of BACKEND_URL
   window.open(
-    `${BACKEND_URL}/download?url=${encodeURIComponent(url)}&itag=${itag}`,
+    `/api/proxy/download?url=${encodeURIComponent(url)}&itag=${itag}`,
     "_blank"
   );
+  // window.open(
+  //   `${BACKEND_URL}/download?url=${encodeURIComponent(url)}&itag=${itag}`,
+  //   "_blank"
+  // );
 
   setTimeout(() => setIsDownloading(null), 2000);
 };
