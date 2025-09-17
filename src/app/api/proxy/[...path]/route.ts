@@ -11,8 +11,11 @@ export async function POST(req: NextRequest, { params }: { params: { path: strin
 async function handleProxy(req: NextRequest, params: { path: string[] }) {
   try {
     // build backend URL
-    const backendBase = "http://95.217.218.224:4000"; // your server
+    const backendBase = process.env.BACKEND_URL || "https://studio-backend.duckdns.org";
     const backendUrl = `${backendBase}/${params.path.join("/")}${req.nextUrl.search}`;
+
+    // const backendBase = "http://95.217.218.224:4000"; // your server
+    // const backendUrl = `${backendBase}/${params.path.join("/")}${req.nextUrl.search}`;
 
     // forward request
     const response = await fetch(backendUrl, {
