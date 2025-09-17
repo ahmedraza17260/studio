@@ -1,45 +1,35 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  return handleProxy(req, await params);
+export async function GET(req: NextRequest, { params }: { params: { path: string[] } }) {
+  return handleProxy(req, params);
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  return handleProxy(req, await params);
+export async function POST(req: NextRequest, { params }: { params: { path: string[] } }) {
+  return handleProxy(req, params);
 }
 
 async function handleProxy(req: NextRequest, params: { path: string[] }) {
-  const backendBase = process.env.BACKEND_URL || "http://localhost:4000";
-  const backendUrl = `${backendBase}/${params.path.join("/")}${req.nextUrl.search}`;
-
   try {
+    // build backend URL
+    const backendBase = "http://95.217.218.224:4000"; // your server
+    const backendUrl = `${backendBase}/${params.path.join("/")}${req.nextUrl.search}`;
+
+    // forward request
     const response = await fetch(backendUrl, {
       method: req.method,
-      headers: Object.fromEntries(req.headers.entries()),
-      body:
-        req.method !== "GET" && req.method !== "HEAD"
-          ? await req.text()
-          : undefined,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: req.method !== "GET" && req.method !== "HEAD" ? await req.text() : undefined,
     });
 
-    // ✅ Stream back response (fixes download issue)
-    return new Response(response.body, {
+    // return backend response
+    const text = await response.text();
+    return new Response(text, {
       status: response.status,
-      headers: response.headers,
+      headers: { "Content-Type": "application/json" },
     });
   } catch (err: any) {
-    return new Response(
-      JSON.stringify({ error: "Proxy error", details: err.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return NextResponse.json({ error: "Proxy failed", details: err.message }, { status: 500 });
   }
 }
