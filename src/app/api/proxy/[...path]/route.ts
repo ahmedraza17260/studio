@@ -22,6 +22,11 @@ async function handleProxy(req: NextRequest, params: { path: string[] }) {
     });
 
     const text = await response.text();
+    console.log('Backend response:', text); // Add logging
+
+    if (!response.ok) {
+      console.error('Backend error:', text);
+    }
     return new Response(text, { status: response.status });
   } catch (err: any) {
     return new Response(JSON.stringify({ error: "Proxy error", details: err.message }), {
