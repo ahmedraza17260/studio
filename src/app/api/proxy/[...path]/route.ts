@@ -9,10 +9,11 @@ export async function POST(req: NextRequest, { params }: { params: { path: strin
 }
 
 async function handleProxy(req: NextRequest, params: { path: string[] }) {
-//   const backendUrl = `http://studio-backend.duckdns.org:4000/${params.path.join("/")}${req.nextUrl.search}`;
+  // Backend base URL (set in Vercel → Environment Variables)
   const backendBase = process.env.BACKEND_URL || "http://localhost:4000";
-  const backendUrl = `${backendBase}/${params.path.join("/")}${req.nextUrl.search}`;
 
+  // Construct full backend URL
+  const backendUrl = `${backendBase}/${params.path.join("/")}${req.nextUrl.search}`;
 
   try {
     const response = await fetch(backendUrl, {
@@ -21,13 +22,11 @@ async function handleProxy(req: NextRequest, params: { path: string[] }) {
       body: req.method !== "GET" && req.method !== "HEAD" ? await req.text() : undefined,
     });
 
-    const text = await response.text();
-    console.log('Backend response:', text); // Add logging
-
-    if (!response.ok) {
-      console.error('Backend error:', text);
-    }
-    return new Response(text, { status: response.status });
+    // ✅ Stream response directly (instead of converting to text)
+    return new Response(response.body, {
+      status: response.status,
+      headers: response.headers,
+    });
   } catch (err: any) {
     return new Response(JSON.stringify({ error: "Proxy error", details: err.message }), {
       status: 500,
